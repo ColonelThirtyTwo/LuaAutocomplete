@@ -2,9 +2,15 @@
 import sublime, sublime_plugin
 from LuaAutocomplete.locals import LocalsFinder
 
-class ExampleCommand(sublime_plugin.TextCommand):
-	def run(self, edit):
-		self.view.insert(edit, 0, "Hello, World!")
+def is_indexing(view, location):
+	"""
+	Returns true if indexing a value; that is, there is a period or colon to the left of the autocompleting word
+	"""
+	pos = view.find_by_class(location, False, sublime.CLASS_WORD_START)
+	if pos == 0:
+		return False
+	char = view.substr(pos-1)
+	return char == "." or char == ":"
 
 class LuaAutocomplete(sublime_plugin.EventListener):
 	def on_query_completions(self, view, prefix, locations):
@@ -13,6 +19,11 @@ class LuaAutocomplete(sublime_plugin.EventListener):
 			return
 		
 		location = locations[0] # TODO: Better multiselect behavior?
+		
+		if is_indexing(view, location):
+			# Don't bother trying to autocomplete value indexing.
+			return
+		
 		src = view.substr(sublime.Region(0, view.size()))
 		
 		localsfinder = LocalsFinder(src)
