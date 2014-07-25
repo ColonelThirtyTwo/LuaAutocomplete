@@ -1,7 +1,8 @@
 
-import re
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
+from copy import copy
 import logging
+import re
 
 logger = logging.getLogger("LuaAutocomplete.locals")
 
@@ -10,7 +11,15 @@ localvar_re = re.compile(r"(?:[a-zA-Z_][a-zA-Z0-9_]*|\.\.\.)")
 class StopParsing(Exception):
 	pass
 
+# Holds info about a variable.
+# vartype: Semantic info about the origins of a variable, ex. if it's a local var, a for loop index, an upvalue, ...
+VarInfo = namedtuple("VarInfo", ["vartype"])
+
 class LocalsFinder:
+	"""
+	Parses a Lua file, looking for local variables that are in a certain scope.
+	"""
+	
 	# Both patterns and matches need to be ordered, so that `longcomment` is tried first before `comment`
 	patterns = OrderedDict([
 		("for_incremental", re.compile(r"\bfor\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=.*?\bdo\b", re.S)),
@@ -28,11 +37,17 @@ class LocalsFinder:
 	])
 	
 	def __init__(self, code):
+		"""
+		Creates a new parser. The parser may only be used once.
+		"""
 		self.code = code
 		self.matches = OrderedDict()
-		self.scope_stack = [set()]
+		self.scope_stack = [{}]
 	
 	def run(self, cursor):
+		"""
+		Runs the parser. cursor is the location of the scope.
+		"""
 		try:
 			current_pos = 0
 			while True:
@@ -58,8 +73,15 @@ class LocalsFinder:
 		logger.debug("Matched %s at char %s", name, match.start())
 		return getattr(self, "handle_"+name)(match)
 	
-	def push_scope(self):
-		self.scope_stack.append(self.scope_stack[-1].copy())
+	def push_scope(self, is_function=False):
+		if not is_function:
+			self.scope_stack.append(self.scope_stack[-1].copy())
+		else:
+			newscope = {}
+			for k, v in self.scope_stack[-1].items():
+				v2 = VarInfo(vartype="upvalue")
+				newscope[k] = v2
+			self.scope_stack.append(newscope)
 	
 	def pop_scope(self):
 		if len(self.scope_stack) == 1:
@@ -68,41 +90,48 @@ class LocalsFinder:
 		else:
 			self.scope_stack.pop()
 	
-	def add_vars(self, *args):
-		self.scope_stack[-1].update(args)
+	def add_var(self, name, **kwargs):
+		self.scope_stack[-1][name] = VarInfo(**kwargs)
 	
+	def add_vars(self, vars, **kwargs):
+		info = VarInfo(**kwargs)
+		for name in vars:
+			self.scope_stack[-1][name] = info
+	
+	#########################################################################
 	
 	def handle_for_incremental(self, match):
 		self.push_scope()
 		
-		self.add_vars(match.group(1))
+		self.add_var(match.group(1), vartype="for index")
 		return match.end()
 	
 	def handle_for_iterator(self, match):
 		self.push_scope()
 		
 		the_locals = localvar_re.findall(match.group(1))
-		self.add_vars(*the_locals)
+		self.add_vars(the_locals, vartype="for index")
 		return match.end()
 	
 	def handle_local_function(self, match):
-		self.add_vars(match.group(1))
+		self.add_var(match.group(1), vartype="local")
 		
-		self.push_scope()
+		self.push_scope(is_function=True)
 		arguments = localvar_re.findall(match.group(2))
-		self.add_vars(*arguments)
+		self.add_vars(arguments, vartype="parameter")
 		return match.end()
 	
 	def handle_function(self, match):
-		self.push_scope()
+		self.push_scope(is_function=True)
 		arguments = localvar_re.findall(match.group(1))
-		self.add_vars(*arguments)
+		self.add_vars(arguments, vartype="parameter")
 		return match.end()
 	
 	def handle_method(self, match):
-		self.push_scope()
+		self.push_scope(is_function=True)
 		arguments = localvar_re.findall(match.group(1))
-		self.add_vars("self", *arguments)
+		self.add_var("self", vartype="self")
+		self.add_vars(arguments, vartype="parameter")
 		return match.end()
 	
 	def handle_block_start(self, match):
@@ -115,7 +144,7 @@ class LocalsFinder:
 	
 	def handle_locals(self, match):
 		the_locals = localvar_re.findall(match.group(1))
-		self.add_vars(*the_locals)
+		self.add_vars(the_locals, vartype="local")
 		return match.end()
 	
 	def handle_comment(self, match):

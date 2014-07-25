@@ -18,4 +18,4 @@ class LuaAutocomplete(sublime_plugin.EventListener):
 		localsfinder = LocalsFinder(src)
 		varz = localsfinder.run(location)
 		
-		return [(x,) for x in varz], sublime.INHIBIT_WORD_COMPLETIONS
+		return [(name+"\t"+data.vartype,name) for name, data in varz.items()], sublime.INHIBIT_WORD_COMPLETIONS
