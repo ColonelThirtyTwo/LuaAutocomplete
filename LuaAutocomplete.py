@@ -2,15 +2,29 @@
 import sublime, sublime_plugin
 from LuaAutocomplete.locals import LocalsFinder
 
-def is_indexing(view, location):
+def can_local_autocomplete(view, location):
 	"""
-	Returns true if indexing a value; that is, there is a period or colon to the left of the autocompleting word
+	Returns true if locals autocompetion makes sense in the specified location (ex. its not indexing a variable, in a string, ...)
 	"""
 	pos = view.find_by_class(location, False, sublime.CLASS_WORD_START)
 	if pos == 0:
+		return True
+	
+	scope_name = view.scope_name(location)
+	if "string." in scope_name or "comment." in scope_name:
+		# In a string or comment
 		return False
+	
+	if "parameter" in scope_name:
+		# Specifying parameters
+		return False
+	
 	char = view.substr(pos-1)
-	return char == "." or char == ":"
+	if char == "." or char == ":":
+		# Indexing a value
+		return False
+	
+	return True
 
 class LuaAutocomplete(sublime_plugin.EventListener):
 	def on_query_completions(self, view, prefix, locations):
@@ -20,8 +34,7 @@ class LuaAutocomplete(sublime_plugin.EventListener):
 		
 		location = locations[0] # TODO: Better multiselect behavior?
 		
-		if is_indexing(view, location):
-			# Don't bother trying to autocomplete value indexing.
+		if not can_local_autocomplete(view, location):
 			return
 		
 		src = view.substr(sublime.Region(0, view.size()))
