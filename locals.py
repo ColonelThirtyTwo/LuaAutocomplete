@@ -38,16 +38,19 @@ class LocalsFinder:
 	
 	def __init__(self, code):
 		"""
-		Creates a new parser. The parser may only be used once.
+		Creates a new parser.
 		"""
 		self.code = code
-		self.matches = OrderedDict()
-		self.scope_stack = [{}]
 	
 	def run(self, cursor):
 		"""
 		Runs the parser. cursor is the location of the scope.
 		"""
+		self.matches = OrderedDict()
+		self.scope_stack = [{}]
+		
+		self.setup_initial_matches()
+		
 		try:
 			current_pos = 0
 			while True:
@@ -62,12 +65,35 @@ class LocalsFinder:
 		except StopParsing:
 			pass
 		
-		return self.scope_stack[-1]
+		curscope = self.scope_stack[-1]
+		del self.matches
+		del self.scope_stack
+		return curscope
+	
+	def setup_initial_matches(self):
+		for name, regex in self.patterns.items():
+			self.matches[name] = regex.search(self.code)
 	
 	def rematch(self, pos):
+		best_name, best_match = None, None
+		
 		for name, regex in self.patterns.items():
-			self.matches[name] = regex.search(self.code, pos)
-		return min(self.matches.items(), key=lambda x: float("inf") if not x[1] else x[1].start())
+			match = self.matches[name]
+			
+			if not match:
+				# Previous try didn't find anything. Trying now won't find anything either.
+				continue
+			
+			# If the new position is less than the first match, the regex doesn't need to be re-ran.
+			if pos > match.start():
+				match = regex.search(self.code, pos)
+				self.matches[name] = match
+			
+			# Find first match
+			if match and (not best_match or match.start() < best_match.start()):
+				best_name = name
+				best_match = match
+		return best_name, best_match
 	
 	def dispatch(self, name, match):
 		logger.debug("Matched %s at char %s", name, match.start())
