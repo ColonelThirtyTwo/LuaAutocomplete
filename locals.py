@@ -179,48 +179,17 @@ class LocalsFinder:
 		return str_end+len(end_str)
 
 if __name__ == "__main__":
+	import sys
 	logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
 	
-	finder = LocalsFinder(r"""
-		
-local oop = require "oop"
-
-local Component, super = oop.Class(...)
-
-Component.DEFAULTNAME = "I am \" nn \x4fa0"
-
-number = 444
-
-local a, b, c = 1, 2, 3
-
-foooooooo = 123
-
-local n = bork()["foo"]()
-
-bork()
-
-function Component.__init(class)
-	return super.__init(class)
-end
-
-function Component:init(obj, name)
-	self.obj = obj
-	self.name = name
+	fname = sys.argv[1]
+	loc = int(sys.argv[2])
 	
-end
-
-function Component:destroy()
-	self.obj = nil
-	self.name = nil
-end
-
-function Component:serialize()
-	return {
-		_name = self.name,
-	}
-end
-
-return Component
-
-	""")
-	print(finder.run(344))
+	with open(fname, "r") as f:
+		contents = f.read()
+	
+	finder = LocalsFinder(contents)
+	for i in range(1):
+		scope = finder.run(loc)
+		if i == 0:
+			print(scope)
